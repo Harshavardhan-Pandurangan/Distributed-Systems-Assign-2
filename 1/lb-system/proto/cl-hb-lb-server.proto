@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+package heartbeat;
+option go_package = "proto/heartbeat";
+
+service Heartbeat {
+    // Send a heartbeat to the load balancer
+    rpc SendHeartbeat(HeartbeatStatus) returns (HeartbeatResponse) {}
+}
+
+message HeartbeatStatus {
+    string worker_id = 1;
+    string worker_address = 2;
+    int32 worker_load_count = 3;
+    string worker_load = 4;
+}
+
+message HeartbeatResponse {
+    bool success = 1;
+    string error_message = 2;
+}
