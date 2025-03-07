@@ -4,15 +4,15 @@ package worker;
 option go_package = "proto/worker";
 
 service WorkerService {
-  // Send a task to the worker server
-  rpc DoWork(WorkRequest) returns (WorkResponse) {}
+    // Send a task to the worker server
+    rpc DoWork(WorkRequest) returns (WorkResponse) {}
 }
 
 message WorkRequest {
-  string task_data = 1;
+    string task_data = 1;
 }
 
 message WorkResponse {
-  bool success = 1;
-  string result = 2;
+    bool success = 1;
+    string result = 2;
 }

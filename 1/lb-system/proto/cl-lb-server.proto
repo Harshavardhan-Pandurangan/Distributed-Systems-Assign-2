@@ -4,18 +4,18 @@ package lb;
 option go_package = "proto/lb";
 
 service LoadBalancer {
-  // Request a worker server
-  rpc GetWorker(WorkerRequest) returns (WorkerResponse) {}
+    // Request a worker server
+    rpc GetWorker(WorkerRequest) returns (WorkerResponse) {}
 }
 
 message WorkerRequest {
-  // Client can specify requirements or info if needed
-  string client_id = 1;
+    // Client can specify requirements or info if needed
+    string client_id = 1;
 }
 
 message WorkerResponse {
-  string worker_id = 1;
-  string worker_address = 2;
-  bool success = 3;
-  string error_message = 4;
+    string worker_id = 1;
+    string worker_address = 2;
+    bool success = 3;
+    string error_message = 4;
 }

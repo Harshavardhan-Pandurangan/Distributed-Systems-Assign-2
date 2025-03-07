@@ -27,7 +27,7 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type HeartbeatClient interface {
 	// Send a heartbeat to the load balancer
-	SendHeartbeat(ctx context.Context, in *HeartbeatStatus, opts ...grpc.CallOption) (*HeartbeatResponse, error)
+	SendHeartbeat(ctx context.Context, in *HeartbeatRequest, opts ...grpc.CallOption) (*HeartbeatStatus, error)
 }
 
 type heartbeatClient struct {
@@ -38,9 +38,9 @@ func NewHeartbeatClient(cc grpc.ClientConnInterface) HeartbeatClient {
 	return &heartbeatClient{cc}
 }
 
-func (c *heartbeatClient) SendHeartbeat(ctx context.Context, in *HeartbeatStatus, opts ...grpc.CallOption) (*HeartbeatResponse, error) {
+func (c *heartbeatClient) SendHeartbeat(ctx context.Context, in *HeartbeatRequest, opts ...grpc.CallOption) (*HeartbeatStatus, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(HeartbeatResponse)
+	out := new(HeartbeatStatus)
 	err := c.cc.Invoke(ctx, Heartbeat_SendHeartbeat_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
@@ -53,7 +53,7 @@ func (c *heartbeatClient) SendHeartbeat(ctx context.Context, in *HeartbeatStatus
 // for forward compatibility.
 type HeartbeatServer interface {
 	// Send a heartbeat to the load balancer
-	SendHeartbeat(context.Context, *HeartbeatStatus) (*HeartbeatResponse, error)
+	SendHeartbeat(context.Context, *HeartbeatRequest) (*HeartbeatStatus, error)
 	mustEmbedUnimplementedHeartbeatServer()
 }
 
@@ -64,7 +64,7 @@ type HeartbeatServer interface {
 // pointer dereference when methods are called.
 type UnimplementedHeartbeatServer struct{}
 
-func (UnimplementedHeartbeatServer) SendHeartbeat(context.Context, *HeartbeatStatus) (*HeartbeatResponse, error) {
+func (UnimplementedHeartbeatServer) SendHeartbeat(context.Context, *HeartbeatRequest) (*HeartbeatStatus, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SendHeartbeat not implemented")
 }
 func (UnimplementedHeartbeatServer) mustEmbedUnimplementedHeartbeatServer() {}
@@ -89,7 +89,7 @@ func RegisterHeartbeatServer(s grpc.ServiceRegistrar, srv HeartbeatServer) {
 }
 
 func _Heartbeat_SendHeartbeat_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(HeartbeatStatus)
+	in := new(HeartbeatRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -101,7 +101,7 @@ func _Heartbeat_SendHeartbeat_Handler(srv interface{}, ctx context.Context, dec 
 		FullMethod: Heartbeat_SendHeartbeat_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(HeartbeatServer).SendHeartbeat(ctx, req.(*HeartbeatStatus))
+		return srv.(HeartbeatServer).SendHeartbeat(ctx, req.(*HeartbeatRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }

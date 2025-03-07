@@ -9,22 +9,20 @@ import (
 	"net"
 	"os"
 	"os/signal"
-	"sync/atomic"
 	"syscall"
 	"time"
 
 	wpb "lb-system/proto/worker"
+	hbpb "lb-system/proto/heartbeat"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"google.golang.org/grpc"
+	"github.com/shirou/gopsutil/process"
 )
 
 // represents metadata about a worker server
 type WorkerInfo struct {
-	ID        string `json:"id"`
-	Address   string `json:"address"`
-	Load      int    `json:"load"`
-	MaxLoad   int    `json:"maxLoad"`
-	Available bool   `json:"available"`
+	ID        string 	`json:"id"`
+	Address   string 	`json:"address"`
 }
 
 // constants for etcd
@@ -34,21 +32,53 @@ const (
 	leaseTTL      = 10 // 10 seconds
 )
 
+// declare proc as a global variable
+var proc *process.Process
+
 // represents a worker server
 type workerServer struct {
 	wpb.UnimplementedWorkerServiceServer
+	hbpb.UnimplementedHeartbeatServer
 	id        string
 	address   string
-	load      int32 // Using atomic for concurrent access
-	maxLoad   int
-	available bool
+	load      string
+}
+
+func (s *workerServer) SendHeartbeat(ctx context.Context, req *hbpb.HeartbeatRequest) (*hbpb.HeartbeatStatus, error) {
+	// get all info to send with heartbeat
+	worker_id := s.id
+	worker_address := s.address
+	worker_load, err := proc.CPUPercent()
+
+	if err != nil {
+		log.Fatalf("Failed to get process: %v", err)
+
+		// send heartbeat status
+		return &hbpb.HeartbeatStatus{
+			WorkerId: worker_id,
+			WorkerAddress: worker_address,
+			// WorkerLoad: worker_load,
+			// convert the worker_load to a string
+			WorkerLoad: fmt.Sprintf("%f", worker_load),
+			ErrorMessage: err.Error(),
+		}, err
+	}
+
+	// send heartbeat status
+	return &hbpb.HeartbeatStatus{
+		WorkerId: worker_id,
+		WorkerAddress: worker_address,
+		// WorkerLoad: worker_load,
+		WorkerLoad: fmt.Sprintf("%f", worker_load),
+		ErrorMessage: err.Error(),
+	}, nil
 }
 
 // implements the worker service method
 func (s *workerServer) DoWork(ctx context.Context, req *wpb.WorkRequest) (*wpb.WorkResponse, error) {
-	// Increment load counter when work starts
-	atomic.AddInt32(&s.load, 1)
-	defer atomic.AddInt32(&s.load, -1) // Decrement when work is done
+	// // Increment load counter when work starts
+	// atomic.AddInt32(&s.load, 1)
+	// defer atomic.AddInt32(&s.load, -1) // Decrement when work is done
 
 	log.Printf("Processing work request: %s", req.TaskData)
 
@@ -133,9 +163,7 @@ func main() {
 	worker := &workerServer{
 		id:        *id,
 		address:   address,
-		load:      0,
-		maxLoad:   100,
-		available: true,
+		load:      "0",
 	}
 
 	// Register with etcd
@@ -149,9 +177,6 @@ func main() {
 	workerInfo := WorkerInfo{
 		ID:        worker.id,
 		Address:   worker.address,
-		Load:      int(worker.load),
-		MaxLoad:   worker.maxLoad,
-		Available: worker.available,
 	}
 
 	// Convert to JSON
@@ -182,21 +207,16 @@ func main() {
 		}
 	}()
 
-	// Start a goroutine to update worker info
-	go func() {
-		for {
-			// Update with current load
-			workerInfo.Load = int(atomic.LoadInt32(&worker.load))
-			workerJSON, _ := json.Marshal(workerInfo)
+	// proc, err := process.NewProcess(int32(os.Getpid()))
+	// if err != nil {
+	// 	log.Fatalf("Failed to get process: %v", err)
+	// }
 
-			_, err := etcdClient.Put(ctx, key, string(workerJSON), clientv3.WithLease(leaseResp.ID))
-			if err != nil {
-				log.Printf("Failed to update worker info: %v", err)
-			}
-
-			time.Sleep(5 * time.Second)
-		}
-	}()
+	// let's make proc a global variable
+	proc, err = process.NewProcess(int32(os.Getpid()))
+	if err != nil {
+		log.Fatalf("Failed to get process: %v", err)
+	}
 
 	// Start gRPC server
 	lis, err := net.Listen("tcp", address)
@@ -205,6 +225,7 @@ func main() {
 	}
 
 	grpcServer := grpc.NewServer()
+	hbpb.RegisterHeartbeatServer(grpcServer, worker)
 	wpb.RegisterWorkerServiceServer(grpcServer, worker)
 
 	// Handle graceful shutdown
@@ -212,11 +233,6 @@ func main() {
 		c := make(chan os.Signal, 1)
 		signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 		<-c
-
-		// Mark worker as unavailable
-		workerInfo.Available = false
-		workerJSON, _ := json.Marshal(workerInfo)
-		etcdClient.Put(ctx, key, string(workerJSON), clientv3.WithLease(leaseResp.ID))
 
 		log.Println("Shutting down worker server...")
 		grpcServer.GracefulStop()
