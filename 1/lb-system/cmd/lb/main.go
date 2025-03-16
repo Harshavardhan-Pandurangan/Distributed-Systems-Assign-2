@@ -13,6 +13,7 @@ import (
 	pb "lb-system/proto/lb"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/connectivity"
 )
 
 // represents metadata about a worker server
@@ -56,9 +57,13 @@ func updateWorkers(etcdClient *clientv3.Client) {
 		return
 	}
 
+	// print the etcd response
+	log.Printf("Received workers: %v", resp)
+
 	// make this a list of workerIds, addresses and loads
 	workers := make([]WorkerInfo, 0)
 	for _, kv := range resp.Kvs {
+		log.Printf("Received worker: %s", kv.Value)
 		var worker WorkerInfo
 		if err := json.Unmarshal(kv.Value, &worker); err != nil {
 			log.Printf("Failed to unmarshal worker info: %v", err)
@@ -69,6 +74,7 @@ func updateWorkers(etcdClient *clientv3.Client) {
 
 	// update the current workers
 	for _, worker := range workers {
+		log.Printf("Checking worker: %s", worker.ID)
 		found := false
 		for _, curr_worker := range curr_workers {
 			if worker.ID == curr_worker.id {
@@ -77,37 +83,19 @@ func updateWorkers(etcdClient *clientv3.Client) {
 			}
 		}
 		if !found {
-			// curr_workers = append(curr_workers, worker)
+			// make a gRPC connection to the worker
+			conn, err := grpc.DialContext(ctx, worker.Address, grpc.WithInsecure())
+			if err != nil {
+				log.Fatalf("Failed to connect to worker: %v", err)
+				continue
+			}
 			curr_workers = append(curr_workers, workerServer{
 				id: worker.ID,
 				address: worker.Address,
 				load: "",
-				conn: nil,
-				client: nil,
+				conn: conn,
+				client: hbpb.NewHeartbeatClient(conn),
 			})
-			// make a gRPC connection to the worker
-			conn, err := grpc.Dial(worker.Address, grpc.WithInsecure())
-			if err != nil {
-				log.Fatalf("Failed to connect to worker: %v", err)
-			}
-			curr_workers[len(curr_workers)-1].conn = conn
-			curr_workers[len(curr_workers)-1].client = hbpb.NewHeartbeatClient(conn)
-		}
-	}
-
-	// remove current workers that are not in the workers list in place
-	for i := 0; i < len(curr_workers); i++ {
-		found := false
-		for _, worker := range workers {
-			if worker.ID == curr_workers[i].id {
-				found = true
-				break
-			}
-		}
-		if !found {
-			// remove the worker
-			curr_workers[i].conn.Close()
-			curr_workers = append(curr_workers[:i], curr_workers[i+1:]...)
 		}
 	}
 
@@ -116,13 +104,29 @@ func updateWorkers(etcdClient *clientv3.Client) {
 
 	// update the load of the workers
 	for i := 0; i < len(curr_workers); i++ {
+		log.Printf("Updating worker %s", curr_workers[i].id)
 		// get the worker's load
+		workerConn := curr_workers[i].conn
+		// if workerConn.GetState() == connectivity.Shutdown || workerConn.GetState() == connectivity.TransientFailure || workerConn.GetState() == connectivity.Idle || workerConn.GetState() == connectivity.Connecting {
+		if workerConn.GetState() != connectivity.Ready {
+			log.Printf("Worker connection is down: %v", workerConn.GetState())
+			workerConn.Close()
+			curr_workers = append(curr_workers[:i], curr_workers[i+1:]...)
+			i--
+			continue
+		}
+		// log the state of the connection
+		log.Printf("Worker connection state: %v", workerConn.GetState())
 		workerClient := curr_workers[i].client
 		workerResp, err := workerClient.SendHeartbeat(ctx, &hbpb.HeartbeatRequest{
 			WorkerId: curr_workers[i].id,
 		})
 		if err != nil {
-			log.Fatalf("Failed to send heartbeat to worker: %v", err)
+			log.Printf("Failed to send heartbeat to worker: %v", err)
+			curr_workers[i].conn.Close()
+			curr_workers = append(curr_workers[:i], curr_workers[i+1:]...)
+			i--
+			continue
 		}
 		curr_workers[i].load = workerResp.WorkerLoad
 
@@ -130,45 +134,6 @@ func updateWorkers(etcdClient *clientv3.Client) {
 		log.Printf("Worker %s at %s has load %s", workerResp.WorkerId, workerResp.WorkerAddress, workerResp.WorkerLoad)
 	}
 }
-
-// // finds an available worker with the least load
-// func (s *loadBalancerServer) getAvailableWorker() (WorkerInfo, error) {
-// 	ctx := context.Background()
-
-// 	// Get all worker registrations
-// 	resp, err := s.etcdClient.Get(ctx, workersPrefix, clientv3.WithPrefix())
-// 	if err != nil {
-// 		return WorkerInfo{}, fmt.Errorf("failed to get workers: %v", err)
-// 	}
-
-// 	if len(resp.Kvs) == 0 {
-// 		return WorkerInfo{}, fmt.Errorf("no workers available")
-// 	}
-
-// 	var bestWorker WorkerInfo
-// 	bestLoad := -1.0
-
-// 	// Find the worker with the least load
-// 	for _, kv := range resp.Kvs {
-// 		var worker WorkerInfo
-// 		if err := json.Unmarshal(kv.Value, &worker); err != nil {
-// 			log.Printf("Failed to unmarshal worker info: %v", err)
-// 			continue
-// 		}
-
-// 		// Select worker with the least load
-// 		if bestLoad == -1 || worker.Load < bestLoad {
-// 			bestWorker = worker
-// 			bestLoad = worker.Load
-// 		}
-// 	}
-
-// 	if bestLoad == -1 {
-// 		return WorkerInfo{}, fmt.Errorf("no available workers found")
-// 	}
-
-// 	return bestWorker, nil
-// }
 
 func (s *loadBalancerServer) getNextWorker() (workerServer, error) {
 	if len(curr_workers) == 0 {
@@ -249,17 +214,6 @@ func main() {
 	lbServer := &loadBalancerServer{
 		etcdClient: etcdClient,
 	}
-
-	// // Watch for worker changes (for logging/monitoring)
-	// watchCh := etcdClient.Watch(context.Background(), workersPrefix, clientv3.WithPrefix())
-	// go func() {
-	// 	for watchResp := range watchCh {
-	// 		for _, event := range watchResp.Events {
-	// 			log.Printf("Worker change detected: %q",
-	// 				event.Kv.Key)
-	// 		}
-	// 	}
-	// }()
 
 	// routine to maintain worker status (heartbeat)
 	go func() {

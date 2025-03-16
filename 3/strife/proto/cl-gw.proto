@@ -1,0 +1,86 @@
+syntax = "proto3";
+
+package cl_gw;
+option go_package = "proto/cl-gw";
+
+service PaymentGatewayService {
+    // Register a new Client
+    rpc RegisterClient(ClientDetails) returns (RegisterResponse) {}
+
+    // Update Client Details
+    rpc UpdateClientDetails(UpdateDetails) returns (UpdateResponse) {}
+
+    // Func to view bank account balance
+    rpc ViewBalance(ViewBalanceRequest) returns (ViewBalanceResponse) {}
+
+    // Initiate transaction
+    rpc InitiateTransaction(InitiateTransactionRequest) returns (InitiateTransactionResponse) {}
+
+    // Func to view transaction history
+    rpc ViewTransactionHistory(ViewTransactionHistoryRequest) returns (ViewTransactionHistoryResponse) {}
+}
+
+message ClientDetails {
+    string client_name = 1;
+    string password = 2;
+}
+
+message RegisterResponse {
+    bool registration_success = 1;
+}
+
+message UpdateDetails {
+    string client_name = 1;
+    string password = 2;
+    repeated string bank_names = 3;
+    repeated float bank_balances = 4;
+}
+
+message UpdateResponse {
+    bool update_success = 1;
+    string update_message = 2;
+}
+
+message ViewBalanceRequest {
+    string client_name = 1;
+    string password = 2;
+    string bank_name = 3;
+}
+
+message ViewBalanceResponse {
+    bool account_exists = 1;
+    string account_balance = 2;
+}
+
+message InitiateTransactionRequest {
+    string client_name = 1;
+    string password = 2;
+    string bank_name = 3;
+    string amount = 4;
+    string client_name2 = 5;
+    string bank_name2 = 6;
+    string transaction_id = 7;
+}
+
+message InitiateTransactionResponse {
+    bool transaction_success = 1;
+    string transaction_message = 2;
+}
+
+message ViewTransactionHistoryRequest {
+    string client_name = 1;
+    string password = 2;
+}
+
+message ViewTransactionHistoryResponse {
+    repeated Transaction transactions = 1;
+}
+
+message Transaction {
+    string client_name = 1;
+    string bank_name = 2;
+    string amount = 3;
+    string client_name2 = 4;
+    string bank_name2 = 5;
+    string transaction_id = 6;
+}

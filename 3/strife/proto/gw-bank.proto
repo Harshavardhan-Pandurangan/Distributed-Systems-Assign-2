@@ -1,0 +1,71 @@
+syntax = "proto3";
+
+package gw_bank;
+option go_package = "proto/gw-bank";
+
+service BankService {
+    // Register a new Client
+    rpc RegisterClient(ClientDetails) returns (RegisterResponse) {}
+
+    // Update Client Details
+    rpc UpdateClientDetails(UpdateDetails) returns (UpdateResponse) {}
+
+    // Func to view bank account balance
+    rpc ViewBalance(ViewBalanceRequest) returns (ViewBalanceResponse) {}
+
+    // Lock for Idempotency
+    rpc LockIdempotency(LockIdempotencyRequest) returns (LockIdempotencyResponse) {}
+
+    // Initiate transaction
+    rpc InitiateTransaction(InitiateTransactionRequest) returns (InitiateTransactionResponse) {}
+}
+
+message ClientDetails {
+    string client_name = 1;
+}
+
+message RegisterResponse {
+    bool registration_success = 1;
+}
+
+message UpdateDetails {
+    string client_name = 1;
+    string bank_name = 2;
+    float bank_balance = 3;
+}
+
+message UpdateResponse {
+    bool update_success = 1;
+}
+
+message ViewBalanceRequest {
+    string client_name = 1;
+}
+
+message ViewBalanceResponse {
+    bool account_exists = 1;
+    float account_balance = 2;
+}
+
+message LockIdempotencyRequest {
+    string bank_name = 1;
+    bool lock_status = 2; // current status at gateway
+}
+
+message LockIdempotencyResponse {
+    bool lock_success = 1;
+    bool lock_status = 2; // current status at bank
+}
+
+message InitiateTransactionRequest {
+    string client_name = 1;
+    string bank_name = 2;
+    string transaction_type = 3;
+    float amount = 4;
+    string transaction_id = 5;
+}
+
+message InitiateTransactionResponse {
+    bool transaction_success = 1;
+    string transaction_message = 2;
+}

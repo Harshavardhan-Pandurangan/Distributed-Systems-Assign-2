@@ -63,7 +63,9 @@ func main() {
 	workerClient := wpb.NewWorkerServiceClient(workerConn)
 
 	// Send work request
-	workCtx, workCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	// workCtx, workCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	// without timeout
+	workCtx, workCancel := context.WithCancel(context.Background())
 	defer workCancel()
 
 	workResp, err := workerClient.DoWork(workCtx, &wpb.WorkRequest{

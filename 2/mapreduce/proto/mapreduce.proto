@@ -1,0 +1,30 @@
+syntax = "proto3";
+
+package mapreduce;
+option go_package = "proto/mapreduce";
+
+service MapReduceService {
+    rpc RequestTask (WorkerRequest) returns (Task);
+    rpc SubmitTask (TaskResult) returns (Ack);
+}
+
+message WorkerRequest {
+    string worker_id = 1;
+}
+
+message Task {
+    string task_type = 1;  // "map" or "reduce"
+    string file_name = 2;
+    int32 task_id = 3;
+    int32 num_reduce = 4;
+}
+
+message TaskResult {
+    int32 task_id = 1;
+    string task_type = 2;
+    string result_file = 3;
+}
+
+message Ack {
+    bool success = 1;
+}

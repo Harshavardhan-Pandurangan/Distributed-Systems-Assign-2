@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"strconv"
 	"log"
 	"net"
 	"os"
@@ -48,6 +49,8 @@ func (s *workerServer) SendHeartbeat(ctx context.Context, req *hbpb.HeartbeatReq
 	// get all info to send with heartbeat
 	worker_id := s.id
 	worker_address := s.address
+	// worker_load, err := proc.CPUPercent()
+	// worker_load, err := proc.CPUPercent(time.Second)
 	worker_load, err := proc.CPUPercent()
 
 	if err != nil {
@@ -57,8 +60,6 @@ func (s *workerServer) SendHeartbeat(ctx context.Context, req *hbpb.HeartbeatReq
 		return &hbpb.HeartbeatStatus{
 			WorkerId: worker_id,
 			WorkerAddress: worker_address,
-			// WorkerLoad: worker_load,
-			// convert the worker_load to a string
 			WorkerLoad: fmt.Sprintf("%f", worker_load),
 			ErrorMessage: err.Error(),
 		}, err
@@ -70,25 +71,20 @@ func (s *workerServer) SendHeartbeat(ctx context.Context, req *hbpb.HeartbeatReq
 		WorkerAddress: worker_address,
 		// WorkerLoad: worker_load,
 		WorkerLoad: fmt.Sprintf("%f", worker_load),
-		ErrorMessage: err.Error(),
+		ErrorMessage: fmt.Sprintf("Worker %s at %s", worker_id, worker_address),
 	}, nil
 }
 
 // implements the worker service method
 func (s *workerServer) DoWork(ctx context.Context, req *wpb.WorkRequest) (*wpb.WorkResponse, error) {
-	// // Increment load counter when work starts
-	// atomic.AddInt32(&s.load, 1)
-	// defer atomic.AddInt32(&s.load, -1) // Decrement when work is done
-
 	log.Printf("Processing work request: %s", req.TaskData)
-
-	// // Simulate actual work
-	// time.Sleep(2 * time.Second)
 
 	// check the type of task
 	if len(req.TaskData) > 5 && req.TaskData[:5] == "sleep" {
 		// if task starts with "sleep", followed by a number, sleep for that duration
-		sleepDuration, err := time.ParseDuration(req.TaskData[6:])
+		log.Printf("Sleeping for %s", req.TaskData[6:])
+		// the sleep time comes in as a string of an integer, convert it to time
+		sleepDuration, err := time.ParseDuration(req.TaskData[6:] + "s")
 		if err != nil {
 			return &wpb.WorkResponse{
 				Success: false,
@@ -102,10 +98,10 @@ func (s *workerServer) DoWork(ctx context.Context, req *wpb.WorkRequest) (*wpb.W
 			Success: true,
 			Result:  fmt.Sprintf("Slept for %s", sleepDuration),
 		}, nil
-	} else if len(req.TaskData) > 5 && req.TaskData[:5] == "sum-up" {
+	} else if len(req.TaskData) > 5 && req.TaskData[:6] == "sum-up" {
 		// if task starts with "sum-up", followed by a number, sum up all numbers from 1 to that number
-		n, err := fmt.Sscanf(req.TaskData[6:], "%d")
-		if err != nil || n != 1 {
+		n, err := strconv.Atoi(req.TaskData[7:])
+		if err != nil {
 			return &wpb.WorkResponse{
 				Success: false,
 				Result:  fmt.Sprintf("Invalid number: %s", req.TaskData[6:]),
@@ -114,7 +110,7 @@ func (s *workerServer) DoWork(ctx context.Context, req *wpb.WorkRequest) (*wpb.W
 
 		sum := 0
 		for i := 1; i <= n; i++ {
-			sum += i
+			sum = (sum + i) % 1000000000000
 		}
 
 		return &wpb.WorkResponse{
@@ -122,12 +118,6 @@ func (s *workerServer) DoWork(ctx context.Context, req *wpb.WorkRequest) (*wpb.W
 			Result:  fmt.Sprintf("Sum of numbers from 1 to %d is %d", n, sum),
 		}, nil
 	}
-
-	// // Return result
-	// return &wpb.WorkResponse{
-	// 	Success: true,
-	// 	Result:  fmt.Sprintf("Processed: %s by worker %s", req.TaskData, s.id),
-	// }, nil
 
 	// if task is not recognized, return an error
 	return &wpb.WorkResponse{
@@ -206,11 +196,6 @@ func main() {
 			// Just drain the channel
 		}
 	}()
-
-	// proc, err := process.NewProcess(int32(os.Getpid()))
-	// if err != nil {
-	// 	log.Fatalf("Failed to get process: %v", err)
-	// }
 
 	// let's make proc a global variable
 	proc, err = process.NewProcess(int32(os.Getpid()))
