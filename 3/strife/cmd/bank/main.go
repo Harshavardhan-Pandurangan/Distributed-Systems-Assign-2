@@ -46,6 +46,15 @@ type BankDatabase struct {
 	} `json:"bank"`
 }
 
+type LockedTransaction struct {
+	ClientName string `json:"client_name"`
+	TransactionId string `json:"transaction_id"`
+	Amount float64 `json:"amount"`
+}
+
+// locked transactions
+var lockedTransactions []LockedTransaction
+
 // Represents a payment gateway server
 type BankServer struct {
 	gwbs.UnimplementedBankServiceServer
@@ -151,6 +160,65 @@ func (s *BankServer) ViewBalance(ctx context.Context, req *gwbs.ViewBalanceReque
 	}, nil
 }
 
+// LockTransaction implements the RPC method
+func (s *BankServer) LockTransaction(ctx context.Context, req *gwbs.TransactionCheckRequest) (*gwbs.TransactionCheckResponse, error) {
+	log.Printf("LockTransaction called for %s", req.ClientName)
+
+	// Check if the transaction ID already exists
+	for _, transaction := range lockedTransactions {
+		if transaction.TransactionId == req.TransactionId {
+			return &gwbs.TransactionCheckResponse{
+				TransactionLock: true,
+				TransactionMessage: "Transaction ID already exists",
+			}, nil
+		}
+	}
+
+	// Add the transaction to the locked transactions
+	if req.TransactionType == "SEND" {
+		// check if the user has enough balance
+		for _, user := range s.database.Bank.Entries {
+			if user.Username == req.ClientName {
+				// total the amount of money the user has locked
+				var lockedAmount float64
+				for _, transaction := range lockedTransactions {
+					if transaction.ClientName == req.ClientName {
+						lockedAmount += transaction.Amount
+					}
+				}
+				if user.Balance < float64(req.Amount) + lockedAmount {
+					return &gwbs.TransactionCheckResponse{
+						TransactionLock: false,
+						TransactionMessage: "Insufficient balance",
+					}, nil
+				} else {
+					// Add the transaction to the locked transactions
+					lockedTransactions = append(lockedTransactions, LockedTransaction{
+						ClientName: req.ClientName,
+						TransactionId: req.TransactionId,
+						Amount: float64(req.Amount),
+					})
+				}
+			}
+		}
+	} else if req.TransactionType == "RECEIVE" {
+		return &gwbs.TransactionCheckResponse{
+			TransactionLock: true,
+			TransactionMessage: "Transaction locked",
+		}, nil
+	} else {
+		return &gwbs.TransactionCheckResponse{
+			TransactionLock: false,
+			TransactionMessage: "Invalid transaction type",
+		}, nil
+	}
+
+	return &gwbs.TransactionCheckResponse{
+		TransactionLock: true,
+		TransactionMessage: "Transaction locked",
+	}, nil
+}
+
 // InitiateTransaction implements the RPC method
 func (s *BankServer) InitiateTransaction(ctx context.Context, req *gwbs.InitiateTransactionRequest) (*gwbs.InitiateTransactionResponse, error) {
 	log.Printf("InitiateTransaction called for %s", req.ClientName)
@@ -173,7 +241,7 @@ func (s *BankServer) InitiateTransaction(ctx context.Context, req *gwbs.Initiate
 
 			if req.TransactionType == "SEND" {
 				// Check if the user has enough balance
-				if user.Balance < req.Amount {
+				if user.Balance < float64(req.Amount) {
 					return &gwbs.InitiateTransactionResponse{
 						TransactionSuccess: false,
 						TransactionMessage: "Insufficient balance",
@@ -181,7 +249,7 @@ func (s *BankServer) InitiateTransaction(ctx context.Context, req *gwbs.Initiate
 				}
 
 				// Deduct the amount from the user
-				s.database.Bank.Entries[i].Balance -= req.Amount
+				s.database.Bank.Entries[i].Balance -= float64(req.Amount)
 
 				// Save the updated database
 				data, err := json.Marshal(s.database)
@@ -194,7 +262,7 @@ func (s *BankServer) InitiateTransaction(ctx context.Context, req *gwbs.Initiate
 				}
 			} else if req.TransactionType == "RECEIVE" {
 				// Add the amount to the user
-				s.database.Bank.Entries[i].Balance += req.Amount
+				s.database.Bank.Entries[i].Balance += float64(req.Amount)
 
 				// Save the updated database
 				data, err := json.Marshal(s.database)
@@ -225,11 +293,10 @@ func (s *BankServer) InitiateTransaction(ctx context.Context, req *gwbs.Initiate
 	transaction := Transaction{
 		ClientName: req.ClientName,
 		TransactionType: req.TransactionType,
-		Amount: req.Amount,
+		Amount: float64(req.Amount),
 		TransactionId: req.TransactionId,
 	}
-	s.database.Bank.Transactions = append
-	(s.database.Bank.Transactions, transaction)
+	s.database.Bank.Transactions = append(s.database.Bank.Transactions, transaction)
 
 	// Save the updated database
 	data, err := json.Marshal(s.database)
@@ -244,6 +311,33 @@ func (s *BankServer) InitiateTransaction(ctx context.Context, req *gwbs.Initiate
 	return &gwbs.InitiateTransactionResponse{
 		TransactionSuccess: true,
 		TransactionMessage: "Transaction successful",
+	}, nil
+}
+
+// AbortTransaction implements the RPC method
+func (s *BankServer) AbortTransaction(ctx context.Context, req *gwbs.AbortTransactionRequest) (*gwbs.AbortTransactionResponse, error) {
+	log.Printf("AbortTransaction called for %s", req.ClientName)
+
+	// Check if the transaction ID exists
+	var found bool
+	for i, transaction := range lockedTransactions {
+		if transaction.TransactionId == req.TransactionId {
+			found = true
+			lockedTransactions = append(lockedTransactions[:i], lockedTransactions[i+1:]...)
+			break
+		}
+	}
+
+	if !found {
+		return &gwbs.AbortTransactionResponse{
+			TransactionAborted: true,
+			TransactionMessage: "Transaction ID not found",
+		}, nil
+	}
+
+	return &gwbs.AbortTransactionResponse{
+		TransactionAborted: true,
+		TransactionMessage: "Transaction aborted",
 	}, nil
 }
 

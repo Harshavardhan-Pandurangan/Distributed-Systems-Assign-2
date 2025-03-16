@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 	"fmt"
+	"strconv"
 
 	clgw "strife/proto/cl-gw"
 	gwbs "strife/proto/gw-bank"
@@ -309,8 +310,7 @@ func (s *paymentGatewayServer) ViewBalance(ctx context.Context, req *clgw.ViewBa
 
 // InitiateTransaction implements the RPC method
 func (s *paymentGatewayServer) InitiateTransaction(ctx context.Context, req *clgw.InitiateTransactionRequest) (*clgw.InitiateTransactionResponse, error) {
-	log.Printf("InitiateTransaction called for %s from account %s to account %s",
-		req.TransactionType, req.AccountNumber, req.AccountNumber2)
+	log.Printf("InitiateTransaction called for bank: %s, client: %s", req.BankName, req.ClientName)
 
 	// Check if the user exists
 	var found bool
@@ -401,57 +401,87 @@ func (s *paymentGatewayServer) InitiateTransaction(ctx context.Context, req *clg
 	defer conn2.Close()
 	bankClient2 := gwbs.NewBankServiceClient(conn2)
 
-	// call the ViewBalance method on the bank server
-	res1, err := bankClient1.ViewBalance(ctx, &gwbs.ViewBalanceRequest{
-		ClientName: req.ClientName,
-	})
+	// check if transaction is possible
+	amount, err := strconv.ParseFloat(req.Amount, 32)
 	if err != nil {
-		log.Printf("Failed to view balance: %v", err)
+		log.Printf("Failed to parse amount: %v", err)
 		return &clgw.InitiateTransactionResponse{
 			TransactionSuccess: false,
-			TransactionMessage: "Failed to view balance",
-		}, nil
-	}
-	if !res1.AccountExists {
-		log.Printf("Account does not exist")
-		return &clgw.InitiateTransactionResponse{
-			TransactionSuccess: false,
-			TransactionMessage: "Account does not exist",
-		}, nil
-	}
-	res2, err := bankClient2.ViewBalance(ctx, &gwbs.ViewBalanceRequest{
-		ClientName: req.ClientName2,
-	})
-	if err != nil {
-		log.Printf("Failed to view balance: %v", err)
-		return &clgw.InitiateTransactionResponse{
-			TransactionSuccess: false,
-			TransactionMessage: "Failed to view balance",
-		}, nil
-	}
-	if !res2.AccountExists {
-		log.Printf("Account does not exist")
-		return &clgw.InitiateTransactionResponse{
-			TransactionSuccess: false,
-			TransactionMessage: "Account does not exist",
+			TransactionMessage: "Failed to parse amount",
 		}, nil
 	}
 
-	// check if the client has enough balance
-	if res1.AccountBalance < req.Amount {
-		log.Printf("Insufficient balance")
+	res, err := bankClient1.LockTransaction(ctx, &gwbs.TransactionCheckRequest{
+		ClientName: req.ClientName,
+		BankName: req.BankName,
+		TransactionId: req.TransactionId,
+		TransactionType: "SEND",
+		Amount: float32(amount),
+	})
+	if err != nil {
+		log.Printf("Failed to lock transaction: %v", err)
 		return &clgw.InitiateTransactionResponse{
 			TransactionSuccess: false,
-			TransactionMessage: "Insufficient balance",
+			TransactionMessage: "Failed to lock transaction",
+		}, nil
+	}
+	if !res.TransactionLock {
+		log.Printf("Transaction not possible")
+		return &clgw.InitiateTransactionResponse{
+			TransactionSuccess: false,
+			TransactionMessage: "Transaction not possible",
+		}, nil
+	}
+
+	res, err = bankClient2.LockTransaction(ctx, &gwbs.TransactionCheckRequest{
+		ClientName: req.ClientName2,
+		BankName: req.BankName2,
+		TransactionId: req.TransactionId,
+		TransactionType: "RECEIVE",
+		Amount: float32(amount),
+	})
+	if err != nil {
+		// abort the transaction
+		_, err1 := bankClient1.AbortTransaction(ctx, &gwbs.AbortTransactionRequest{
+			ClientName: req.ClientName,
+			BankName: req.BankName,
+			TransactionId: req.TransactionId,
+		})
+		if err1 != nil {
+			log.Printf("Failed to abort transaction: %v", err1)
+		}
+
+		log.Printf("Failed to lock transaction: %v", err)
+		return &clgw.InitiateTransactionResponse{
+			TransactionSuccess: false,
+			TransactionMessage: "Failed to lock transaction",
+		}, nil
+	}
+	if !res.TransactionLock {
+		// abort the transaction
+		_, err1 := bankClient1.AbortTransaction(ctx, &gwbs.AbortTransactionRequest{
+			ClientName: req.ClientName,
+			BankName: req.BankName,
+			TransactionId: req.TransactionId,
+		})
+		if err1 != nil {
+			log.Printf("Failed to abort transaction: %v", err1)
+		}
+
+		log.Printf("Transaction not possible")
+		return &clgw.InitiateTransactionResponse{
+			TransactionSuccess: false,
+			TransactionMessage: "Transaction not possible",
 		}, nil
 	}
 
 	// deduct the amount from the client's account
-	res, err = bankClient1.InitiateTransaction(ctx, &gwbs.TransactionDetails{
+	var res2 *gwbs.InitiateTransactionResponse
+	res2, err = bankClient1.InitiateTransaction(ctx, &gwbs.InitiateTransactionRequest{
 		ClientName: req.ClientName,
 		BankName: req.BankName,
 		TransactionType: "SEND",
-		Amount: req.Amount,
+		Amount: float32(amount),
 		TransactionId: req.TransactionId,
 	})
 	if err != nil {
@@ -461,7 +491,7 @@ func (s *paymentGatewayServer) InitiateTransaction(ctx context.Context, req *clg
 			TransactionMessage: "Failed to initiate transaction",
 		}, nil
 	}
-	if !res.TransactionSuccess {
+	if !res2.TransactionSuccess {
 		log.Printf("Failed to initiate transaction")
 		return &clgw.InitiateTransactionResponse{
 			TransactionSuccess: false,
@@ -470,25 +500,25 @@ func (s *paymentGatewayServer) InitiateTransaction(ctx context.Context, req *clg
 	}
 
 	// add the amount to the beneficiary's account
-	res, err = bankClient2.InitiateTransaction(ctx, &gwbs.TransactionDetails{
+	res2, err = bankClient2.InitiateTransaction(ctx, &gwbs.InitiateTransactionRequest{
 		ClientName: req.ClientName2,
 		BankName: req.BankName2,
 		TransactionType: "RECEIVE",
-		Amount: req.Amount,
+		Amount: float32(amount),
 		TransactionId: req.TransactionId,
 	})
 	if err != nil {
 		log.Printf("Failed to initiate transaction: %v", err)
 		return &clgw.InitiateTransactionResponse{
 			TransactionSuccess: false,
-			TransactionMessage: "Failed to initiate transaction",
+			TransactionMessage: "Partial transaction",
 		}, nil
 	}
-	if !res.TransactionSuccess {
+	if !res2.TransactionSuccess {
 		log.Printf("Failed to initiate transaction")
 		return &clgw.InitiateTransactionResponse{
 			TransactionSuccess: false,
-			TransactionMessage: "Failed to initiate transaction",
+			TransactionMessage: "Partial transaction",
 		}, nil
 	}
 
@@ -496,7 +526,7 @@ func (s *paymentGatewayServer) InitiateTransaction(ctx context.Context, req *clg
 	db.Server.Transactions = append(db.Server.Transactions, Transaction{
 		ClientName: req.ClientName,
 		BankName: req.BankName,
-		Amount: req.Amount,
+		Amount:	float32(amount),
 		ClientName2: req.ClientName2,
 		BankName2: req.BankName2,
 		TransactionId: req.TransactionId,
@@ -518,7 +548,7 @@ func (s *paymentGatewayServer) InitiateTransaction(ctx context.Context, req *clg
 
 // ViewTransactionHistory implements the RPC method
 func (s *paymentGatewayServer) ViewTransactionHistory(ctx context.Context, req *clgw.ViewTransactionHistoryRequest) (*clgw.ViewTransactionHistoryResponse, error) {
-	log.Printf("ViewTransactionHistory called for bank: %s, account: %s", req.BankName, req.AccountNumber)
+	log.Printf("ViewTransactionHistory called for %s", req.ClientName)
 
 	// Check if the user exists
 	var found bool
@@ -544,7 +574,7 @@ func (s *paymentGatewayServer) ViewTransactionHistory(ctx context.Context, req *
 			transactions = append(transactions, &clgw.Transaction{
 				ClientName: transaction.ClientName,
 				BankName: transaction.BankName,
-				Amount: transaction.Amount,
+				Amount: fmt.Sprintf("%f", transaction.Amount),
 				ClientName2: transaction.ClientName2,
 				BankName2: transaction.BankName2,
 				TransactionId: transaction.TransactionId,

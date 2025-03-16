@@ -22,8 +22,9 @@ const (
 	BankService_RegisterClient_FullMethodName      = "/gw_bank.BankService/RegisterClient"
 	BankService_UpdateClientDetails_FullMethodName = "/gw_bank.BankService/UpdateClientDetails"
 	BankService_ViewBalance_FullMethodName         = "/gw_bank.BankService/ViewBalance"
-	BankService_LockIdempotency_FullMethodName     = "/gw_bank.BankService/LockIdempotency"
+	BankService_LockTransaction_FullMethodName     = "/gw_bank.BankService/LockTransaction"
 	BankService_InitiateTransaction_FullMethodName = "/gw_bank.BankService/InitiateTransaction"
+	BankService_AbortTransaction_FullMethodName    = "/gw_bank.BankService/AbortTransaction"
 )
 
 // BankServiceClient is the client API for BankService service.
@@ -36,10 +37,12 @@ type BankServiceClient interface {
 	UpdateClientDetails(ctx context.Context, in *UpdateDetails, opts ...grpc.CallOption) (*UpdateResponse, error)
 	// Func to view bank account balance
 	ViewBalance(ctx context.Context, in *ViewBalanceRequest, opts ...grpc.CallOption) (*ViewBalanceResponse, error)
-	// Lock for Idempotency
-	LockIdempotency(ctx context.Context, in *LockIdempotencyRequest, opts ...grpc.CallOption) (*LockIdempotencyResponse, error)
+	// 2PC Lock
+	LockTransaction(ctx context.Context, in *TransactionCheckRequest, opts ...grpc.CallOption) (*TransactionCheckResponse, error)
 	// Initiate transaction
 	InitiateTransaction(ctx context.Context, in *InitiateTransactionRequest, opts ...grpc.CallOption) (*InitiateTransactionResponse, error)
+	// Abort transaction
+	AbortTransaction(ctx context.Context, in *AbortTransactionRequest, opts ...grpc.CallOption) (*AbortTransactionResponse, error)
 }
 
 type bankServiceClient struct {
@@ -80,10 +83,10 @@ func (c *bankServiceClient) ViewBalance(ctx context.Context, in *ViewBalanceRequ
 	return out, nil
 }
 
-func (c *bankServiceClient) LockIdempotency(ctx context.Context, in *LockIdempotencyRequest, opts ...grpc.CallOption) (*LockIdempotencyResponse, error) {
+func (c *bankServiceClient) LockTransaction(ctx context.Context, in *TransactionCheckRequest, opts ...grpc.CallOption) (*TransactionCheckResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(LockIdempotencyResponse)
-	err := c.cc.Invoke(ctx, BankService_LockIdempotency_FullMethodName, in, out, cOpts...)
+	out := new(TransactionCheckResponse)
+	err := c.cc.Invoke(ctx, BankService_LockTransaction_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -100,6 +103,16 @@ func (c *bankServiceClient) InitiateTransaction(ctx context.Context, in *Initiat
 	return out, nil
 }
 
+func (c *bankServiceClient) AbortTransaction(ctx context.Context, in *AbortTransactionRequest, opts ...grpc.CallOption) (*AbortTransactionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AbortTransactionResponse)
+	err := c.cc.Invoke(ctx, BankService_AbortTransaction_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // BankServiceServer is the server API for BankService service.
 // All implementations must embed UnimplementedBankServiceServer
 // for forward compatibility.
@@ -110,10 +123,12 @@ type BankServiceServer interface {
 	UpdateClientDetails(context.Context, *UpdateDetails) (*UpdateResponse, error)
 	// Func to view bank account balance
 	ViewBalance(context.Context, *ViewBalanceRequest) (*ViewBalanceResponse, error)
-	// Lock for Idempotency
-	LockIdempotency(context.Context, *LockIdempotencyRequest) (*LockIdempotencyResponse, error)
+	// 2PC Lock
+	LockTransaction(context.Context, *TransactionCheckRequest) (*TransactionCheckResponse, error)
 	// Initiate transaction
 	InitiateTransaction(context.Context, *InitiateTransactionRequest) (*InitiateTransactionResponse, error)
+	// Abort transaction
+	AbortTransaction(context.Context, *AbortTransactionRequest) (*AbortTransactionResponse, error)
 	mustEmbedUnimplementedBankServiceServer()
 }
 
@@ -133,11 +148,14 @@ func (UnimplementedBankServiceServer) UpdateClientDetails(context.Context, *Upda
 func (UnimplementedBankServiceServer) ViewBalance(context.Context, *ViewBalanceRequest) (*ViewBalanceResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ViewBalance not implemented")
 }
-func (UnimplementedBankServiceServer) LockIdempotency(context.Context, *LockIdempotencyRequest) (*LockIdempotencyResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method LockIdempotency not implemented")
+func (UnimplementedBankServiceServer) LockTransaction(context.Context, *TransactionCheckRequest) (*TransactionCheckResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method LockTransaction not implemented")
 }
 func (UnimplementedBankServiceServer) InitiateTransaction(context.Context, *InitiateTransactionRequest) (*InitiateTransactionResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method InitiateTransaction not implemented")
+}
+func (UnimplementedBankServiceServer) AbortTransaction(context.Context, *AbortTransactionRequest) (*AbortTransactionResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method AbortTransaction not implemented")
 }
 func (UnimplementedBankServiceServer) mustEmbedUnimplementedBankServiceServer() {}
 func (UnimplementedBankServiceServer) testEmbeddedByValue()                     {}
@@ -214,20 +232,20 @@ func _BankService_ViewBalance_Handler(srv interface{}, ctx context.Context, dec 
 	return interceptor(ctx, in, info, handler)
 }
 
-func _BankService_LockIdempotency_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(LockIdempotencyRequest)
+func _BankService_LockTransaction_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(TransactionCheckRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(BankServiceServer).LockIdempotency(ctx, in)
+		return srv.(BankServiceServer).LockTransaction(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: BankService_LockIdempotency_FullMethodName,
+		FullMethod: BankService_LockTransaction_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(BankServiceServer).LockIdempotency(ctx, req.(*LockIdempotencyRequest))
+		return srv.(BankServiceServer).LockTransaction(ctx, req.(*TransactionCheckRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -246,6 +264,24 @@ func _BankService_InitiateTransaction_Handler(srv interface{}, ctx context.Conte
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(BankServiceServer).InitiateTransaction(ctx, req.(*InitiateTransactionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _BankService_AbortTransaction_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AbortTransactionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(BankServiceServer).AbortTransaction(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: BankService_AbortTransaction_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(BankServiceServer).AbortTransaction(ctx, req.(*AbortTransactionRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -270,12 +306,16 @@ var BankService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _BankService_ViewBalance_Handler,
 		},
 		{
-			MethodName: "LockIdempotency",
-			Handler:    _BankService_LockIdempotency_Handler,
+			MethodName: "LockTransaction",
+			Handler:    _BankService_LockTransaction_Handler,
 		},
 		{
 			MethodName: "InitiateTransaction",
 			Handler:    _BankService_InitiateTransaction_Handler,
+		},
+		{
+			MethodName: "AbortTransaction",
+			Handler:    _BankService_AbortTransaction_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

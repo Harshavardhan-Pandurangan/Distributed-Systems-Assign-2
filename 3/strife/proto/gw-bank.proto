@@ -13,11 +13,14 @@ service BankService {
     // Func to view bank account balance
     rpc ViewBalance(ViewBalanceRequest) returns (ViewBalanceResponse) {}
 
-    // Lock for Idempotency
-    rpc LockIdempotency(LockIdempotencyRequest) returns (LockIdempotencyResponse) {}
+    // 2PC Lock
+    rpc LockTransaction(TransactionCheckRequest) returns (TransactionCheckResponse) {}
 
     // Initiate transaction
     rpc InitiateTransaction(InitiateTransactionRequest) returns (InitiateTransactionResponse) {}
+
+    // Abort transaction
+    rpc AbortTransaction(AbortTransactionRequest) returns (AbortTransactionResponse) {}
 }
 
 message ClientDetails {
@@ -47,14 +50,17 @@ message ViewBalanceResponse {
     float account_balance = 2;
 }
 
-message LockIdempotencyRequest {
-    string bank_name = 1;
-    bool lock_status = 2; // current status at gateway
+message TransactionCheckRequest {
+    string client_name = 1;
+    string bank_name = 2;
+    string transaction_id = 3;
+    string transaction_type = 4;
+    float amount = 5;
 }
 
-message LockIdempotencyResponse {
-    bool lock_success = 1;
-    bool lock_status = 2; // current status at bank
+message TransactionCheckResponse {
+    bool transaction_lock = 1;
+    string transaction_message = 2;
 }
 
 message InitiateTransactionRequest {
@@ -69,3 +75,15 @@ message InitiateTransactionResponse {
     bool transaction_success = 1;
     string transaction_message = 2;
 }
+
+message AbortTransactionRequest {
+    string client_name = 1;
+    string bank_name = 2;
+    string transaction_id = 3;
+}
+
+message AbortTransactionResponse {
+    bool transaction_aborted = 1;
+    string transaction_message = 2;
+}
+
