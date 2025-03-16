@@ -4,27 +4,42 @@ package mapreduce;
 option go_package = "proto/mapreduce";
 
 service MapReduceService {
-    rpc RequestTask (WorkerRequest) returns (Task);
-    rpc SubmitTask (TaskResult) returns (Ack);
+    // Mapper function
+    rpc Map(MapRequest) returns (MapResponse) {}
+
+    // Reducer function
+    rpc Reduce(ReduceRequest) returns (ReduceResponse) {}
+
+    // Work update function
+    rpc Update(UpdateRequest) returns (UpdateResponse) {}
 }
 
-message WorkerRequest {
-    string worker_id = 1;
+message MapRequest {
 }
 
-message Task {
-    string task_type = 1;  // "map" or "reduce"
-    string file_name = 2;
+message MapResponse {
+    int32 worker_id = 1;
+    string input_file = 2;
+    int32 num_reduce_tasks = 3;
+    int32 task_id = 4;
+}
+
+message ReduceRequest {
+}
+
+message ReduceResponse {
+    int32 worker_id = 1;
+    string intermediate_files = 2;
     int32 task_id = 3;
-    int32 num_reduce = 4;
 }
 
-message TaskResult {
-    int32 task_id = 1;
-    string task_type = 2;
-    string result_file = 3;
+message UpdateRequest {
+    int32 worker_id = 1;
+    string worker_type = 2;
+    int32 task_id = 3;
+    string status = 4;
 }
 
-message Ack {
-    bool success = 1;
+message UpdateResponse {
+    string response = 1;
 }

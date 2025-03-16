@@ -19,16 +19,21 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	MapReduceService_RequestTask_FullMethodName = "/mapreduce.MapReduceService/RequestTask"
-	MapReduceService_SubmitTask_FullMethodName  = "/mapreduce.MapReduceService/SubmitTask"
+	MapReduceService_Map_FullMethodName    = "/mapreduce.MapReduceService/Map"
+	MapReduceService_Reduce_FullMethodName = "/mapreduce.MapReduceService/Reduce"
+	MapReduceService_Update_FullMethodName = "/mapreduce.MapReduceService/Update"
 )
 
 // MapReduceServiceClient is the client API for MapReduceService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type MapReduceServiceClient interface {
-	RequestTask(ctx context.Context, in *WorkerRequest, opts ...grpc.CallOption) (*Task, error)
-	SubmitTask(ctx context.Context, in *TaskResult, opts ...grpc.CallOption) (*Ack, error)
+	// Mapper function
+	Map(ctx context.Context, in *MapRequest, opts ...grpc.CallOption) (*MapResponse, error)
+	// Reducer function
+	Reduce(ctx context.Context, in *ReduceRequest, opts ...grpc.CallOption) (*ReduceResponse, error)
+	// Work update function
+	Update(ctx context.Context, in *UpdateRequest, opts ...grpc.CallOption) (*UpdateResponse, error)
 }
 
 type mapReduceServiceClient struct {
@@ -39,20 +44,30 @@ func NewMapReduceServiceClient(cc grpc.ClientConnInterface) MapReduceServiceClie
 	return &mapReduceServiceClient{cc}
 }
 
-func (c *mapReduceServiceClient) RequestTask(ctx context.Context, in *WorkerRequest, opts ...grpc.CallOption) (*Task, error) {
+func (c *mapReduceServiceClient) Map(ctx context.Context, in *MapRequest, opts ...grpc.CallOption) (*MapResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(Task)
-	err := c.cc.Invoke(ctx, MapReduceService_RequestTask_FullMethodName, in, out, cOpts...)
+	out := new(MapResponse)
+	err := c.cc.Invoke(ctx, MapReduceService_Map_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *mapReduceServiceClient) SubmitTask(ctx context.Context, in *TaskResult, opts ...grpc.CallOption) (*Ack, error) {
+func (c *mapReduceServiceClient) Reduce(ctx context.Context, in *ReduceRequest, opts ...grpc.CallOption) (*ReduceResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(Ack)
-	err := c.cc.Invoke(ctx, MapReduceService_SubmitTask_FullMethodName, in, out, cOpts...)
+	out := new(ReduceResponse)
+	err := c.cc.Invoke(ctx, MapReduceService_Reduce_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *mapReduceServiceClient) Update(ctx context.Context, in *UpdateRequest, opts ...grpc.CallOption) (*UpdateResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdateResponse)
+	err := c.cc.Invoke(ctx, MapReduceService_Update_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -63,8 +78,12 @@ func (c *mapReduceServiceClient) SubmitTask(ctx context.Context, in *TaskResult,
 // All implementations must embed UnimplementedMapReduceServiceServer
 // for forward compatibility.
 type MapReduceServiceServer interface {
-	RequestTask(context.Context, *WorkerRequest) (*Task, error)
-	SubmitTask(context.Context, *TaskResult) (*Ack, error)
+	// Mapper function
+	Map(context.Context, *MapRequest) (*MapResponse, error)
+	// Reducer function
+	Reduce(context.Context, *ReduceRequest) (*ReduceResponse, error)
+	// Work update function
+	Update(context.Context, *UpdateRequest) (*UpdateResponse, error)
 	mustEmbedUnimplementedMapReduceServiceServer()
 }
 
@@ -75,11 +94,14 @@ type MapReduceServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedMapReduceServiceServer struct{}
 
-func (UnimplementedMapReduceServiceServer) RequestTask(context.Context, *WorkerRequest) (*Task, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method RequestTask not implemented")
+func (UnimplementedMapReduceServiceServer) Map(context.Context, *MapRequest) (*MapResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Map not implemented")
 }
-func (UnimplementedMapReduceServiceServer) SubmitTask(context.Context, *TaskResult) (*Ack, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method SubmitTask not implemented")
+func (UnimplementedMapReduceServiceServer) Reduce(context.Context, *ReduceRequest) (*ReduceResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Reduce not implemented")
+}
+func (UnimplementedMapReduceServiceServer) Update(context.Context, *UpdateRequest) (*UpdateResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Update not implemented")
 }
 func (UnimplementedMapReduceServiceServer) mustEmbedUnimplementedMapReduceServiceServer() {}
 func (UnimplementedMapReduceServiceServer) testEmbeddedByValue()                          {}
@@ -102,38 +124,56 @@ func RegisterMapReduceServiceServer(s grpc.ServiceRegistrar, srv MapReduceServic
 	s.RegisterService(&MapReduceService_ServiceDesc, srv)
 }
 
-func _MapReduceService_RequestTask_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(WorkerRequest)
+func _MapReduceService_Map_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MapRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(MapReduceServiceServer).RequestTask(ctx, in)
+		return srv.(MapReduceServiceServer).Map(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: MapReduceService_RequestTask_FullMethodName,
+		FullMethod: MapReduceService_Map_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(MapReduceServiceServer).RequestTask(ctx, req.(*WorkerRequest))
+		return srv.(MapReduceServiceServer).Map(ctx, req.(*MapRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _MapReduceService_SubmitTask_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(TaskResult)
+func _MapReduceService_Reduce_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReduceRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(MapReduceServiceServer).SubmitTask(ctx, in)
+		return srv.(MapReduceServiceServer).Reduce(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: MapReduceService_SubmitTask_FullMethodName,
+		FullMethod: MapReduceService_Reduce_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(MapReduceServiceServer).SubmitTask(ctx, req.(*TaskResult))
+		return srv.(MapReduceServiceServer).Reduce(ctx, req.(*ReduceRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _MapReduceService_Update_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MapReduceServiceServer).Update(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: MapReduceService_Update_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MapReduceServiceServer).Update(ctx, req.(*UpdateRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -146,12 +186,16 @@ var MapReduceService_ServiceDesc = grpc.ServiceDesc{
 	HandlerType: (*MapReduceServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
-			MethodName: "RequestTask",
-			Handler:    _MapReduceService_RequestTask_Handler,
+			MethodName: "Map",
+			Handler:    _MapReduceService_Map_Handler,
 		},
 		{
-			MethodName: "SubmitTask",
-			Handler:    _MapReduceService_SubmitTask_Handler,
+			MethodName: "Reduce",
+			Handler:    _MapReduceService_Reduce_Handler,
+		},
+		{
+			MethodName: "Update",
+			Handler:    _MapReduceService_Update_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
