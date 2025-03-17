@@ -5,6 +5,7 @@ import (
 	"flag"
 	"log"
 	"time"
+	"fmt"
 
 	lbpb "lb-system/proto/lb"
 	wpb "lb-system/proto/worker"
@@ -22,6 +23,8 @@ func main() {
 
 	// print the task
 	log.Printf("Sending task to worker: %s", *task)
+
+	current_time := time.Now()
 
 	// Connect to load balancer
 	log.Printf("Connecting to load balancer at %s", *lbAddress)
@@ -76,4 +79,6 @@ func main() {
 	}
 
 	log.Printf("Work completed successfully: %s", workResp.Result)
+
+	fmt.Printf("Time taken: %s", time.Since(current_time))
 }

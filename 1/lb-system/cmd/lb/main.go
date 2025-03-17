@@ -49,6 +49,40 @@ type loadBalancerServer struct {
 }
 
 func updateWorkers(etcdClient *clientv3.Client) {
+	// log the current workers
+	log.Printf("Current workers: %v", curr_workers)
+
+	// update the load of the workers
+	for i := 0; i < len(curr_workers); i++ {
+		log.Printf("Updating worker %s", curr_workers[i].id)
+		// get the worker's load
+		workerConn := curr_workers[i].conn
+		if workerConn.GetState() != connectivity.Ready {
+			log.Printf("Worker connection is down: %v", workerConn.GetState())
+			workerConn.Close()
+			curr_workers = append(curr_workers[:i], curr_workers[i+1:]...)
+			i--
+			continue
+		}
+		// log the state of the connection
+		log.Printf("Worker connection state: %v", workerConn.GetState())
+		workerClient := curr_workers[i].client
+		workerResp, err := workerClient.SendHeartbeat(ctx, &hbpb.HeartbeatRequest{
+			WorkerId: curr_workers[i].id,
+		})
+		if err != nil {
+			log.Printf("Failed to send heartbeat to worker: %v", err)
+			curr_workers[i].conn.Close()
+			curr_workers = append(curr_workers[:i], curr_workers[i+1:]...)
+			i--
+			continue
+		}
+		curr_workers[i].load = workerResp.WorkerLoad
+
+		// log the worker's load
+		fmt.Printf("Worker %s at %s has load %s\n", workerResp.WorkerId, workerResp.WorkerAddress, workerResp.WorkerLoad)
+	}
+
 	// get all the workers from etcd
 	ctx := context.Background()
 	resp, err := etcdClient.Get(ctx, workersPrefix, clientv3.WithPrefix())
@@ -98,41 +132,6 @@ func updateWorkers(etcdClient *clientv3.Client) {
 			})
 		}
 	}
-
-	// log the current workers
-	log.Printf("Current workers: %v", curr_workers)
-
-	// update the load of the workers
-	for i := 0; i < len(curr_workers); i++ {
-		log.Printf("Updating worker %s", curr_workers[i].id)
-		// get the worker's load
-		workerConn := curr_workers[i].conn
-		// if workerConn.GetState() == connectivity.Shutdown || workerConn.GetState() == connectivity.TransientFailure || workerConn.GetState() == connectivity.Idle || workerConn.GetState() == connectivity.Connecting {
-		if workerConn.GetState() != connectivity.Ready {
-			log.Printf("Worker connection is down: %v", workerConn.GetState())
-			workerConn.Close()
-			curr_workers = append(curr_workers[:i], curr_workers[i+1:]...)
-			i--
-			continue
-		}
-		// log the state of the connection
-		log.Printf("Worker connection state: %v", workerConn.GetState())
-		workerClient := curr_workers[i].client
-		workerResp, err := workerClient.SendHeartbeat(ctx, &hbpb.HeartbeatRequest{
-			WorkerId: curr_workers[i].id,
-		})
-		if err != nil {
-			log.Printf("Failed to send heartbeat to worker: %v", err)
-			curr_workers[i].conn.Close()
-			curr_workers = append(curr_workers[:i], curr_workers[i+1:]...)
-			i--
-			continue
-		}
-		curr_workers[i].load = workerResp.WorkerLoad
-
-		// log the worker's load
-		log.Printf("Worker %s at %s has load %s", workerResp.WorkerId, workerResp.WorkerAddress, workerResp.WorkerLoad)
-	}
 }
 
 func (s *loadBalancerServer) getNextWorker() (workerServer, error) {
@@ -143,7 +142,7 @@ func (s *loadBalancerServer) getNextWorker() (workerServer, error) {
 	if s_type == "first" {
 		// get the first worker
 		worker := curr_workers[0]
-		curr_workers = append(curr_workers[1:], worker)
+		// curr_workers = append(curr_workers[1:], worker)
 		return worker, nil
 	} else if s_type == "rr" {
 		// get the next worker in the list
